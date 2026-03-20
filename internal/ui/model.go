@@ -78,6 +78,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursorSq%8 != 7 {
 				m.cursorSq++
 			}
+		case "c":
+			m.statusMessage = "...thinking"
+			move := m.board.SearchBestMove(5)
+			if move != 0 {
+				m.board.MakeMove(move)
+				m.validMoves = m.board.GenerateLegalMoves()
+				fromStr, _ := chess.ParseSquareI2S(move.From())
+				toStr, _ := chess.ParseSquareI2S(move.To())
+				m.statusMessage = fmt.Sprintf("AI played %s %s", fromStr, toStr)
+			} else {
+				m.statusMessage = "Game Over"
+			}
+			m.enterMode = SelectMode
+			m.selectedSq = 255
 		case "enter":
 			color := m.board.GetColorType(m.cursorSq)
 			//piece:= m.board.GetPieceType(m.cursorSq)
@@ -171,7 +185,7 @@ func (m Model) ViewChessBoard() string {
 			rank := 7 - row
 			file := col
 			sq := uint8(rank*8 + file)
-			baseStyle := lipgloss.NewStyle().Padding(0, 0)
+			baseStyle := lipgloss.NewStyle().Width(3).Height(1).Align(lipgloss.Center)
 			if customStyle, exists := squareStyles[sq]; exists {
 				return baseStyle.Inherit(customStyle)
 			}
