@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math/bits"
 	"strings"
 
 	"github.com/NirbhikKumawat/GoChess/chess"
@@ -21,6 +22,16 @@ var pieceMap = map[uint8]map[uint8]string{
 	chess.White: {chess.Pawn: "♟", chess.Knight: "♞", chess.Bishop: "♝", chess.Rook: "♜", chess.Queen: "♛", chess.King: "♚", chess.Empty: "  "},
 	chess.Black: {chess.Pawn: "♙", chess.Knight: "♘", chess.Bishop: "♗", chess.Rook: "♖", chess.Queen: "♕", chess.King: "♔", chess.Empty: "  "},
 }
+
+var (
+	bgValidMove = lipgloss.Color("238") // Dark gray
+	bgCapture   = lipgloss.Color("124") // Dark red
+	bgCheck     = lipgloss.Color("196") // Bright red
+	bgCursor    = lipgloss.Color("62")  // Blue/Purple
+	bgSelected  = lipgloss.Color("220") // Yellow
+	bgLightSq   = lipgloss.Color("252") // Light board square
+	bgDarkSq    = lipgloss.Color("240") // Dark board square
+)
 
 type Model struct {
 	board         *chess.Board
@@ -116,28 +127,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) ViewChessBoard() string {
-	chessBoard := [][]string{
-		{" ", " ", " ", " ", " ", " ", " ", " "},
-		{" ", " ", " ", " ", " ", " ", " ", " "},
-		{" ", " ", " ", " ", " ", " ", " ", " "},
-		{" ", " ", " ", " ", " ", " ", " ", " "},
-		{" ", " ", " ", " ", " ", " ", " ", " "},
-		{" ", " ", " ", " ", " ", " ", " ", " "},
-		{" ", " ", " ", " ", " ", " ", " ", " "},
-		{" ", " ", " ", " ", " ", " ", " ", " "},
+	squareStyles := make(map[uint8]lipgloss.Style)
+	kingBits := m.board.Colors[m.board.SideToMove] & m.board.Pieces[chess.King]
+	if kingBits != 0 {
+		kingSq := uint8(bits.TrailingZeros64(kingBits))
+		if m.board.IsSquareAttacked(kingSq, m.board.SideToMove^1) {
+			squareStyles[kingSq] = lipgloss.NewStyle().Background(bgCheck)
+		}
 	}
+	if m.selectedSq != 255 {
+		for i := 0; i < m.validMoves.Count; i++ {
+			move := m.validMoves.Moves[i]
+			if move.From() == m.selectedSq {
+				to := move.To()
+				flags := move.Flags()
+				isCapture := flags == 4 || flags == 5 || flags >= 12
+				if isCapture {
+					squareStyles[to] = lipgloss.NewStyle().Foreground(bgCapture)
+				} else {
+					squareStyles[to] = lipgloss.NewStyle().Foreground(bgValidMove)
+				}
+			}
+		}
+		squareStyles[m.selectedSq] = lipgloss.NewStyle().Background(bgSelected).Foreground(lipgloss.Color("0"))
+	}
+	squareStyles[m.cursorSq] = lipgloss.NewStyle().Background(bgCursor).Foreground(lipgloss.Color("255"))
+	chessBoard := make([][]string, 8)
 	for rank := 7; rank >= 0; rank-- {
+		chessBoard[7-rank] = make([]string, 8)
 		for file := 0; file < 8; file++ {
 			sq := uint8(rank*8 + file)
 			color := m.board.GetColorType(sq)
 			ptype := m.board.GetPieceType(sq)
-			if sq == m.cursorSq {
-				chessBoard[7-rank][file] = fmt.Sprintf("[%s]", pieceMap[color][ptype])
-			} else if sq == m.selectedSq {
-				chessBoard[7-rank][file] = fmt.Sprintf("{%s}", pieceMap[color][ptype])
-			} else {
-				chessBoard[7-rank][file] = fmt.Sprintf(" %s ", pieceMap[color][ptype])
-			}
+			chessBoard[7-rank][file] = fmt.Sprintf(" %s ", pieceMap[color][ptype])
 		}
 	}
 	t := table.New().
@@ -146,9 +168,20 @@ func (m Model) ViewChessBoard() string {
 		BorderColumn(true).
 		Rows(chessBoard...).
 		StyleFunc(func(row, col int) lipgloss.Style {
-			return lipgloss.NewStyle().Padding(0, 1)
+			rank := 7 - row
+			file := col
+			sq := uint8(rank*8 + file)
+			baseStyle := lipgloss.NewStyle().Padding(0, 0)
+			if customStyle, exists := squareStyles[sq]; exists {
+				return baseStyle.Inherit(customStyle)
+			}
+			isLightSquare := (rank+file)%2 != 0
+			if isLightSquare {
+				return baseStyle.Background(bgLightSq).Foreground(lipgloss.Color("16"))
+			}
+			return baseStyle.Background(bgDarkSq).Foreground(lipgloss.Color("255"))
 		})
-	ranks := strings.Join([]string{" A", "B", "C", "D", "E", "F", "G", "H  "}, "     ")
+	ranks := strings.Join([]string{"A", "B", "C", "D", "E", "F", "G", "H  "}, "   ")
 	files := strings.Join([]string{" 8", "7", "6", "5", "4", "3", "2", "1 "}, "\n\n ")
 
 	return lipgloss.JoinVertical(
